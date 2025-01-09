@@ -1,0 +1,14 @@
+{
+  "manifest_version": 3,
+  "name": "BullxCT",
+  "version": "1.0",
+  "description": "Track CT tweets and tokens",
+  "permissions": ["activeTab", "scripting", "storage"],
+  "content_scripts": [
+    {
+      "matches": ["*://neo.bullx.io/*"],
+      "js": ["socket.io.min.js", "neobullx.js"],
+      "css": ["styles.css"]
+    }
+  ]
+}

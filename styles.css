@@ -1,0 +1,73 @@
+.custom-modal {
+  position: fixed;
+  z-index: 2001;
+  opacity: 0;
+  transform: scale(0.95);
+  transform-origin: 117px 511px;
+  transition: opacity 0.2s ease, transform 0.2s ease;
+  pointer-events: none;
+}
+
+.custom-modal.visible {
+  opacity: 1;
+  transform: scale(1);
+  pointer-events: all;
+}
+
+.custom-modal .ant-modal {
+  transition: transform 0.2s ease;
+}
+
+.custom-modal.dragging .ant-modal {
+  transition: none;
+  user-select: none;
+}
+
+/* Add backdrop when modal is visible */
+.custom-modal.visible::before {
+  content: '';
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: rgba(0, 0, 0, 0.45);
+  z-index: -1;
+  opacity: 0;
+  animation: fadeIn 0.2s ease forwards;
+}
+
+@keyframes fadeIn {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+.custom-modal .ant-modal-close {
+  position: absolute;
+  top: 0;
+  right: 0;
+  z-index: 10;
+  padding: 0;
+  color: rgba(255, 255, 255, 0.7);
+  font-weight: 700;
+  line-height: 1;
+  text-decoration: none;
+  background: transparent;
+  border: 0;
+  outline: 0;
+  cursor: pointer;
+  transition: color 0.3s;
+}
+
+.custom-modal .ant-modal-close-x {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  width: 40px;
+  height: 40px;
+  font-size: 16px;
+}
