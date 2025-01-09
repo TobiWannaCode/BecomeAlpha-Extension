@@ -1,18 +1,24 @@
 function createCustomButton() {
   const style = document.createElement('style');
   style.textContent = `
-  .settings-panel {
-    min-width: 200px;
-    z-index: 9999;
-  }
+    .settings-panel {
+      min-width: 200px;
+      z-index: 9999;
+    }
   `;
   document.head.appendChild(style);
 
-  const tweetCache = new Set();
   const MAX_TWEETS = 50;
+  const tweetCache = new Set();
   const counters = {
     tweets: 0,
     tokens: 0
+  };
+
+  let modalState = {
+    isOpen: false,
+    isLocked: true,
+    position: { x: 0, y: 0 }
   };
 
   const emojiMap = {
@@ -61,10 +67,10 @@ function createCustomButton() {
       <span class="text-blue-400">0 tokens</span>
     </div>
   `;
+
   const modal = document.createElement('div');
   modal.className = 'custom-modal hidden';
   
-  let isLocked = true;
   const defaultPosition = { left: '60px', bottom: '35px' };
 
   modal.innerHTML = `
@@ -88,7 +94,7 @@ function createCustomButton() {
                 <span class="text-sm font-medium text-green-600">CT Tracker</span>
               </button>
               <div class="flex items-center gap-2">
-                <button class="lock-button" title="Lock to bottom">
+                <button class="lock-button text-grey-400 hover:text-grey-300" title="Lock to bottom">
                   <svg class="w-4 h-4" viewBox="0 0 24 24" stroke="currentColor" fill="none" stroke-width="2">
                     <!-- Locked icon -->
                     <path class="lock-closed" d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4"/>
@@ -97,8 +103,9 @@ function createCustomButton() {
                   </svg>
                 </button>
                 <button class="settings-button" title="Settings">
-                  <svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                    <path d="M12 6V4m0 2a2 2 0 100 4m0-4a2 2 0 110 4m-6 8a2 2 0 100-4m0 4a2 2 0 110-4m0 4v2m0-6V4m6 6v10m6-2a2 2 0 100-4m0 4a2 2 0 110-4m0 4v2m0-6V4"/>
+                  <svg class="w-4 h-4" viewBox="0 0 24 24" stroke="white" fill="none" stroke-width="1.5">
+                    <path d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z"/>
+                    <path d="M12 15a3 3 0 100-6 3 3 0 000 6z"/>
                   </svg>
                 </button>
               </div>
@@ -118,31 +125,53 @@ function createCustomButton() {
     </div>
   `;
 
-  const insertButton = () => {
-    const bottomBar = document.querySelector('div[class*="fixed bottom-0"]');
-    const leftSection = bottomBar?.querySelector('.flex.items-center.justify-center.gap-5');
-    
-    if (leftSection) {
-      const notificationsButton = leftSection.querySelector('button:last-child');
-      if (notificationsButton && !leftSection.contains(customButton)) {
-        notificationsButton.after(customButton);
+  let isDragging = false;
+  let startX, startY, startLeft, startBottom;
+  let positionUpdateTimeout;
+
+  const dragHeader = modal.querySelector('.ant-modal-body .flex[class*="h-[50px]"]');
+  const modalDialog = modal.querySelector('.ant-modal');
+  dragHeader.style.cursor = 'move';
+
+  const saveModalState = () => {
+    modalState.position = {
+      x: (modalDialog.getBoundingClientRect().left / window.innerWidth) * 100,
+      y: (modalDialog.getBoundingClientRect().bottom / window.innerHeight) * 100
+    };
+    localStorage.setItem('ct-tracker-modal-state', JSON.stringify(modalState));
+  };
+
+  const loadModalState = () => {
+    const saved = localStorage.getItem('ct-tracker-modal-state');
+    if (saved) {
+      modalState = JSON.parse(saved);
+      if (modalState.isOpen) {
+        modal.classList.remove('hidden');
+        requestAnimationFrame(() => {
+          modal.classList.add('visible');
+          if (!modalState.isLocked) {
+            modalDialog.style.left = `${modalState.position.x}vw`;
+            modalDialog.style.bottom = `${modalState.position.y}vh`;
+          }
+        });
+      }
+      const lockButton = modal.querySelector('.lock-button');
+      if (lockButton) {
+        lockButton.querySelector('.lock-closed').classList.toggle('hidden', !modalState.isLocked);
+        lockButton.querySelector('.lock-open').classList.toggle('hidden', modalState.isLocked);
       }
     }
   };
 
-  let isDragging = false;
-  let startX;
-  let startY;
-  let startLeft;
-  let startBottom;
-
-  const dragHeader = modal.querySelector('.ant-modal-body .flex[class*="h-[50px]"]');
-  const modalDialog = modal.querySelector('.ant-modal');
-
-  dragHeader.style.cursor = 'move';
+  const handlePositionUpdate = () => {
+    if (!modalState.isLocked) {
+      clearTimeout(positionUpdateTimeout);
+      positionUpdateTimeout = setTimeout(saveModalState, 100);
+    }
+  };
 
   dragHeader.addEventListener('mousedown', (e) => {
-    if (!isLocked && (e.target === dragHeader || dragHeader.contains(e.target))) {
+    if (!modalState.isLocked && (e.target === dragHeader || dragHeader.contains(e.target))) {
       isDragging = true;
       startX = e.clientX;
       startY = e.clientY;
@@ -163,6 +192,7 @@ function createCustomButton() {
       modalDialog.style.left = `${newLeft}px`;
       modalDialog.style.bottom = `${newBottom}px`;
       modalDialog.style.top = 'unset';
+      handlePositionUpdate();
     }
   });
 
@@ -170,62 +200,28 @@ function createCustomButton() {
     isDragging = false;
   });
 
-  const updateCounters = () => {
-    counters.tweets = document.querySelectorAll('#message-container > div').length;
-    counters.tokens = document.querySelectorAll('[id^="tokens-"] > a').length;
-    
-    const counterDisplay = document.querySelector('.counter-display');
-    if (counterDisplay) {
-      counterDisplay.innerHTML = `
-        <span class="text-green-400">${counters.tweets} tweets</span>
-        <span class="text-blue-400">${counters.tokens} tokens</span>
-      `;
-    }
+  const openModal = () => {
+    modalDialog.style.left = modalState.isLocked ? defaultPosition.left : `${modalState.position.x}vw`;
+    modalDialog.style.bottom = modalState.isLocked ? defaultPosition.bottom : `${modalState.position.y}vh`;
+    modalDialog.style.top = 'unset';
+    modal.classList.remove('hidden');
+    requestAnimationFrame(() => modal.classList.add('visible'));
   };
 
-  const saveToStorage = () => {
-    const container = document.getElementById('message-container');
-    const data = {
-      tweets: container.innerHTML,
-      counters,
-      settings: {
-        showOnlyWithTokens: localStorage.getItem('show-tokens-only') === 'true'
-      }
-    };
-    localStorage.setItem('ct-tracker-data', JSON.stringify(data));
-    localStorage.setItem('ct-tracker-tweets', JSON.stringify([...tweetCache]));
+  const closeModal = () => {
+    modal.classList.remove('visible');
+    setTimeout(() => modal.classList.add('hidden'), 200);
   };
 
-  const loadFromStorage = () => {
-    const savedTweets = localStorage.getItem('ct-tracker-tweets');
-    if (savedTweets) {
-      const tweets = JSON.parse(savedTweets);
-      tweets.forEach(id => tweetCache.add(id));
+  customButton.addEventListener('click', () => {
+    modalState.isOpen = !modal.classList.contains('visible');
+    if (modalState.isOpen) {
+      openModal();
+    } else {
+      closeModal();
     }
-  
-    const data = localStorage.getItem('ct-tracker-data');
-    if (data) {
-      const parsed = JSON.parse(data);
-      const container = document.getElementById('message-container');
-      container.innerHTML = parsed.tweets;
-      Object.assign(counters, parsed.counters);
-      if (parsed.settings?.showOnlyWithTokens) {
-        const checkbox = modal.querySelector('.show-tokens-only');
-        if (checkbox) checkbox.checked = parsed.settings.showOnlyWithTokens;
-        filterTweets();
-      }
-      updateCounters();
-    }
-  };
-
-  const filterTweets = () => {
-    const showOnlyWithTokens = localStorage.getItem('show-tokens-only') === 'true';
-    const tweets = document.querySelectorAll('#message-container > div');
-    tweets.forEach(tweet => {
-      const hasTokens = tweet.querySelector('[id^="tokens-"]').children.length > 0;
-      tweet.style.display = showOnlyWithTokens && !hasTokens ? 'none' : 'block';
-    });
-  };
+    saveModalState();
+  });
 
   const initControls = () => {
     const lockButton = modal.querySelector('.lock-button');
@@ -236,16 +232,14 @@ function createCustomButton() {
     showTokensOnly.checked = localStorage.getItem('show-tokens-only') === 'true';
 
     lockButton.addEventListener('click', () => {
-      isLocked = !isLocked;
-      if (isLocked) {
+      modalState.isLocked = !modalState.isLocked;
+      if (modalState.isLocked) {
         modalDialog.style.left = defaultPosition.left;
         modalDialog.style.bottom = defaultPosition.bottom;
-        lockButton.querySelector('.lock-closed').classList.remove('hidden');
-        lockButton.querySelector('.lock-open').classList.add('hidden');
-      } else {
-        lockButton.querySelector('.lock-closed').classList.add('hidden');
-        lockButton.querySelector('.lock-open').classList.remove('hidden');
       }
+      lockButton.querySelector('.lock-closed').classList.toggle('hidden', !modalState.isLocked);
+      lockButton.querySelector('.lock-open').classList.toggle('hidden', modalState.isLocked);
+      saveModalState();
     });
 
     settingsButton.addEventListener('click', () => {
@@ -264,195 +258,241 @@ function createCustomButton() {
     });
   };
 
-  customButton.addEventListener('click', () => {
-    if (modal.classList.contains('hidden')) {
-      const modalDialog = modal.querySelector('.ant-modal');
-      if (isLocked) {
-        modalDialog.style.left = defaultPosition.left;
-        modalDialog.style.bottom = defaultPosition.bottom;
-      }
-      modalDialog.style.top = 'unset';
-      modal.classList.remove('hidden');
-      requestAnimationFrame(() => {
-        modal.classList.add('visible');
-      });
-    } else {
-      modal.classList.remove('visible');
-      setTimeout(() => {
-        modal.classList.add('hidden');
-      }, 200);
-    }
-  });
-
   modal.querySelector('.ant-modal-close').addEventListener('click', () => {
-    modal.classList.remove('visible');
-    setTimeout(() => {
-      modal.classList.add('hidden');
-    }, 200);
-  });
+   modalState.isOpen = false;
+   closeModal();
+   saveModalState();
+ });
 
-  modal.addEventListener('click', (e) => {
-    if (e.target === modal) {
-      modal.classList.remove('visible');
-      setTimeout(() => {
-        modal.classList.add('hidden');
-      }, 200);
-    }
-  });
+ modal.addEventListener('click', (e) => {
+   if (e.target === modal) {
+     modalState.isOpen = false;
+     closeModal(); 
+     saveModalState();
+   }
+ });
 
-  const socket = io('wss://becomealpha.xyz', {
-    transports: ['websocket'],
-  });
+ const updateCounters = () => {
+   counters.tweets = document.querySelectorAll('#message-container > div').length;
+   counters.tokens = document.querySelectorAll('[id^="tokens-"] > a').length;
+   
+   const counterDisplay = document.querySelector('.counter-display');
+   if (counterDisplay) {
+     counterDisplay.innerHTML = `
+       <span class="text-green-400">${counters.tweets} tweets</span>
+       <span class="text-blue-400">${counters.tokens} tokens</span>
+     `;
+   }
+ };
 
-  socket.on('connect', () => {
-    console.log('Connected to WebSocket server:', socket.id);
-    loadFromStorage();
-  });
+ const saveToStorage = () => {
+   const container = document.getElementById('message-container');
+   const data = {
+     tweets: container.innerHTML,
+     counters,
+     settings: {
+       showOnlyWithTokens: localStorage.getItem('show-tokens-only') === 'true'
+     }
+   };
+   localStorage.setItem('ct-tracker-data', JSON.stringify(data));
+   localStorage.setItem('ct-tracker-tweets', JSON.stringify([...tweetCache]));
+ };
 
-  socket.on('twitter-user', (data) => {
-    const container = document.getElementById('message-container');
-    const timestamp = new Date(data.timestamp).toLocaleString();
-    const action = data.title.split(' ')[1].replace(':', '');
+ const loadFromStorage = () => {
+   const savedTweets = localStorage.getItem('ct-tracker-tweets');
+   if (savedTweets) {
+     const tweets = JSON.parse(savedTweets);
+     tweets.forEach(id => tweetCache.add(id));
+   }
 
-    const tweetId = data.twitter_link.split('/').pop();
-    if (tweetCache.has(tweetId)) {
-    return;
-    }
-    tweetCache.add(tweetId);
+   const data = localStorage.getItem('ct-tracker-data');
+   if (data) {
+     const parsed = JSON.parse(data);
+     const container = document.getElementById('message-container');
+     container.innerHTML = parsed.tweets;
+     Object.assign(counters, parsed.counters);
+     if (parsed.settings?.showOnlyWithTokens) {
+       const checkbox = modal.querySelector('.show-tokens-only');
+       if (checkbox) checkbox.checked = parsed.settings.showOnlyWithTokens;
+       filterTweets();
+     }
+     updateCounters();
+   }
+   loadModalState();
+ };
 
-    const messageCard = document.createElement('div');
-    messageCard.className = 'bg-grey-800 rounded-lg p-4 flex flex-col space-y-2';
-    messageCard.innerHTML = `
-      <div class="flex items-center justify-between">
-        <div class="flex items-center gap-2">
-          <span class="text-green-500 font-medium">@${data.twitter_link.split('/')[3]}</span>
-          <a href="${data.twitter_link}" target="_blank" class="text-xs text-grey-400 hover:text-grey-300">${action}</a>
-        </div>
-        <a href="${data.twitter_link}" target="_blank" class="text-blue-400 hover:text-blue-300">
-          <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="currentColor">
-            <path d="M18.244 2.25h3.308l-7.227 8.26 8.502 11.24H16.17l-5.214-6.817L4.99 21.75H1.68l7.73-8.835L1.254 2.25H8.08l4.713 6.231zm-1.161 17.52h1.833L7.084 4.126H5.117z"/>
-          </svg>
-        </a>
-      </div>
-      <div class="text-sm text-grey-300 line-clamp-2">${parseFormatting(data.description)}</div>
-      <div class="text-xs text-grey-400">${timestamp}</div>
-      <div id="tokens-${tweetId}" class="mt-2 flex flex-wrap gap-2"></div>
-    `;
-    
-    container.insertBefore(messageCard, container.firstChild);
+ const filterTweets = () => {
+   const showOnlyWithTokens = localStorage.getItem('show-tokens-only') === 'true';
+   const tweets = document.querySelectorAll('#message-container > div');
+   tweets.forEach(tweet => {
+     const hasTokens = tweet.querySelector('[id^="tokens-"]').children.length > 0;
+     tweet.style.display = showOnlyWithTokens && !hasTokens ? 'none' : 'block';
+   });
+ };
 
-    const tweets = container.children;
-    if (tweets.length > MAX_TWEETS) {
-      for (let i = MAX_TWEETS; i < tweets.length; i++) {
-        tweets[i].remove();
-      }
-    }
+ const socket = io('wss://becomealpha.xyz', {
+   transports: ['websocket'],
+ });
 
-    updateCounters();
-    saveToStorage();
-    filterTweets();
-  });
+ socket.on('connect', () => {
+   console.log('Connected to WebSocket server:', socket.id);
+   loadFromStorage();
+ });
 
-  socket.on('token-update', (data) => {
-    data.data.forEach(token => {
-      if (token.w?.twitter) {
-        const tweetId = token.w.twitter.split('/').pop();
-        const tokenContainer = document.getElementById(`tokens-${tweetId}`);
-        if (tokenContainer) {
-          const getHolderBgColor = (holders) => {
-            if (holders <= 15) return 'bg-grey-700 hover:bg-grey-600 bg-green-500/10';
-            if (holders <= 30) return 'bg-grey-700 hover:bg-grey-600 bg-yellow-500/10';
-            if (holders <= 50) return 'bg-grey-700 hover:bg-grey-600 bg-orange-500/10';
-            return 'bg-grey-700 hover:bg-grey-600 bg-red-500/10';
-          };
+ socket.on('twitter-user', (data) => {
+   const container = document.getElementById('message-container');
+   const tweetId = data.twitter_link.split('/').pop();
+   
+   if (tweetCache.has(tweetId)) return;
+   tweetCache.add(tweetId);
+   
+   const timestamp = new Date(data.timestamp).toLocaleString();
+   const action = data.title.split(' ')[1].replace(':', '');
 
-          const existingToken = tokenContainer.querySelector(`[data-token="${token.a}"]`);
-          const percentageChange = token.ac ? `${token.ac > 0 ? '+' : ''}${token.ac.toFixed(2)}%` : '0%';
-          const priceColor = token.ac > 0 ? 'text-green-400' : 'text-red-400';
-          const holderBgColor = getHolderBgColor(parseInt(token.f));
+   const messageCard = document.createElement('div');
+   messageCard.className = 'bg-grey-800 rounded-lg p-4 flex flex-col space-y-2';
+   messageCard.innerHTML = `
+     <div class="flex items-center justify-between">
+       <div class="flex items-center gap-2">
+         <span class="text-green-500 font-medium">@${data.twitter_link.split('/')[3]}</span>
+         <a href="${data.twitter_link}" target="_blank" class="text-xs text-grey-400 hover:text-grey-300">${action}</a>
+       </div>
+       <a href="${data.twitter_link}" target="_blank" class="text-blue-400 hover:text-blue-300">
+         <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="currentColor">
+           <path d="M18.244 2.25h3.308l-7.227 8.26 8.502 11.24H16.17l-5.214-6.817L4.99 21.75H1.68l7.73-8.835L1.254 2.25H8.08l4.713 6.231zm-1.161 17.52h1.833L7.084 4.126H5.117z"/>
+         </svg>
+       </a>
+     </div>
+     <div class="text-sm text-grey-300 line-clamp-2">${parseFormatting(data.description)}</div>
+     <div class="text-xs text-grey-400">${timestamp}</div>
+     <div id="tokens-${tweetId}" class="mt-2 flex flex-wrap gap-2"></div>
+   `;
+   
+   container.insertBefore(messageCard, container.firstChild);
 
-          if (existingToken) {
-            existingToken.className = `inline-flex items-center rounded px-2 py-1 ${holderBgColor}`;
-            existingToken.innerHTML = `
-              <span class="text-white text-sm">${token.b}</span>
-              <span class="ml-2 text-xs text-white">(${token.f})</span>
-              <span class="ml-2 text-xs ${priceColor}">${percentageChange}</span>
-            `;
-            existingToken.setAttribute('data-holders', token.f);
+   const tweets = container.children;
+   if (tweets.length > MAX_TWEETS) {
+     for (let i = MAX_TWEETS; i < tweets.length; i++) {
+       tweets[i].remove();
+     }
+   }
 
-            if (existingToken !== tokenContainer.firstElementChild) {
-              const tokens = [...tokenContainer.children];
-              const firstToken = tokens.shift();
-              tokens.sort((a, b) => parseInt(b.getAttribute('data-holders')) - parseInt(a.getAttribute('data-holders')));
-              tokenContainer.innerHTML = '';
-              tokenContainer.appendChild(firstToken);
-              tokens.forEach(t => tokenContainer.appendChild(t));
-            }
-          } else {
-            const tokenCard = document.createElement('a');
-            tokenCard.href = `https://neo.bullx.io/terminal?chainId=1399811149&address=${token.a}`;
-            tokenCard.setAttribute('data-token', token.a);
-            tokenCard.setAttribute('data-holders', token.f);
-            tokenCard.className = `inline-flex items-center rounded px-2 py-1 ${holderBgColor}`;
-            tokenCard.onclick = (e) => {
-              e.preventDefault();
-              window.location.href = tokenCard.href;
-            };
-            
-            tokenCard.innerHTML = `
-              <span class="text-white text-sm">${token.b}</span>
-              <span class="ml-2 text-xs text-white">(${token.f})</span>
-              <span class="ml-2 text-xs ${priceColor}">${percentageChange}</span>
-            `;
+   updateCounters();
+   saveToStorage();
+   filterTweets();
+ });
 
-            if (tokenContainer.children.length === 0) {
-              tokenContainer.appendChild(tokenCard);
-            } else {
-              const tokens = [...tokenContainer.children];
-              const firstToken = tokens.shift();
-              tokens.push(tokenCard);
-              tokens.sort((a, b) => parseInt(b.getAttribute('data-holders')) - parseInt(a.getAttribute('data-holders')));
-              tokenContainer.innerHTML = '';
-              tokenContainer.appendChild(firstToken);
-              tokens.forEach(t => tokenContainer.appendChild(t));
-            }
-          }
-          updateCounters();
-          saveToStorage();
-        }
-      }
-    });
-  });
+ socket.on('token-update', (data) => {
+   data.data.forEach(token => {
+     if (token.w?.twitter) {
+       const tweetId = token.w.twitter.split('/').pop();
+       const tokenContainer = document.getElementById(`tokens-${tweetId}`);
+       if (tokenContainer) {
+         const getHolderBgColor = (holders) => {
+           if (holders <= 15) return 'bg-grey-700 hover:bg-grey-600 bg-green-500/10';
+           if (holders <= 30) return 'bg-grey-700 hover:bg-grey-600 bg-yellow-500/10';
+           if (holders <= 50) return 'bg-grey-700 hover:bg-grey-600 bg-orange-500/10';
+           return 'bg-grey-700 hover:bg-grey-600 bg-red-500/10';
+         };
 
-  socket.on('connect_error', (error) => {
-    console.error('Connection error:', error);
-  });
+         const existingToken = tokenContainer.querySelector(`[data-token="${token.a}"]`);
+         const percentageChange = token.ac ? `${token.ac > 0 ? '+' : ''}${token.ac.toFixed(2)}%` : '0%';
+         const priceColor = token.ac > 0 ? 'text-green-400' : 'text-red-400';
+         const holderBgColor = getHolderBgColor(parseInt(token.f));
 
-  socket.on('error', (error) => {
-    console.error('Error:', error);
-  });
+         if (existingToken) {
+           existingToken.className = `inline-flex items-center rounded px-2 py-1 ${holderBgColor}`;
+           existingToken.innerHTML = `
+             <span class="text-white text-sm">${token.b}</span>
+             <span class="ml-2 text-xs text-white">(${token.f})</span>
+             <span class="ml-2 text-xs ${priceColor}">${percentageChange}</span>
+           `;
+           existingToken.setAttribute('data-holders', token.f);
 
-  socket.on('disconnect', (reason) => {
-    console.log('Disconnected from server:', reason);
-  });
+           if (existingToken !== tokenContainer.firstElementChild) {
+             const tokens = [...tokenContainer.children];
+             const firstToken = tokens.shift();
+             tokens.sort((a, b) => parseInt(b.getAttribute('data-holders')) - parseInt(a.getAttribute('data-holders')));
+             tokenContainer.innerHTML = '';
+             tokenContainer.appendChild(firstToken);
+             tokens.forEach(t => tokenContainer.appendChild(t));
+           }
+         } else {
+           const tokenCard = document.createElement('a');
+           tokenCard.href = `https://neo.bullx.io/terminal?chainId=1399811149&address=${token.a}`;
+           tokenCard.setAttribute('data-token', token.a);
+           tokenCard.setAttribute('data-holders', token.f);
+           tokenCard.className = `inline-flex items-center rounded px-2 py-1 ${holderBgColor}`;
+           tokenCard.onclick = (e) => {
+             e.preventDefault();
+             window.location.href = tokenCard.href;
+           };
+           
+           tokenCard.innerHTML = `
+             <span class="text-white text-sm">${token.b}</span>
+             <span class="ml-2 text-xs text-white">(${token.f})</span>
+             <span class="ml-2 text-xs ${priceColor}">${percentageChange}</span>
+           `;
 
-  document.body.appendChild(customButton);
-  document.body.appendChild(modal);
-  initControls();
-  loadFromStorage();
+           if (tokenContainer.children.length === 0) {
+             tokenContainer.appendChild(tokenCard);
+           } else {
+             const tokens = [...tokenContainer.children];
+             const firstToken = tokens.shift();
+             tokens.push(tokenCard);
+             tokens.sort((a, b) => parseInt(b.getAttribute('data-holders')) - parseInt(a.getAttribute('data-holders')));
+             tokenContainer.innerHTML = '';
+             tokenContainer.appendChild(firstToken);
+             tokens.forEach(t => tokenContainer.appendChild(t));
+           }
+         }
+         updateCounters();
+         saveToStorage();
+       }
+     }
+   });
+ });
 
-  const observer = new MutationObserver(insertButton);
+ socket.on('connect_error', (error) => {
+   console.error('Connection error:', error);
+ });
 
-  observer.observe(document.body, {
+ socket.on('error', (error) => {
+   console.error('Error:', error);
+ });
+
+ socket.on('disconnect', (reason) => {
+   console.log('Disconnected from server:', reason);
+ });
+
+ const insertButton = () => {
+   const bottomBar = document.querySelector('div[class*="fixed bottom-0"]');
+   const leftSection = bottomBar?.querySelector('.flex.items-center.justify-center.gap-5');
+   
+   if (leftSection) {
+     const notificationsButton = leftSection.querySelector('button:last-child');
+     if (notificationsButton && !leftSection.contains(customButton)) {
+       notificationsButton.after(customButton);
+     }
+   }
+ };
+
+ const observer = new MutationObserver(insertButton);
+ observer.observe(document.body, {
    childList: true,
    subtree: true
-  });
+ });
 
-  return customButton;
+ insertButton();
+ document.body.appendChild(modal);
+ initControls();
+ loadFromStorage();
+
+ return customButton;
 }
 
 if (document.readyState === 'loading') {
-  document.addEventListener('DOMContentLoaded', createCustomButton);
+ document.addEventListener('DOMContentLoaded', createCustomButton);
 } else {
-  createCustomButton();
+ createCustomButton();
 }
